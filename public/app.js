@@ -357,22 +357,49 @@ async function loadStats() {
             </div>
             <div class="qr-field">
                 <strong>Fecha Almacén:</strong> ${data.fechaAlmacen || 'N/A'}
+/**
+ * Muestra el último resultado escaneado
+ */
+function displayLastResult(data, estado) {
+    const estadoClass = estado === 'EN ALMACEN' ? 'almacen' : 'despachado';
+    const estadoEmoji = estado === 'EN ALMACEN' ? '📦' : '🚚';
+    
+    elements.resultType.innerHTML = `<span class="type-badge type-${estadoClass}">${estadoEmoji} ${estado}</span>`;
+    
+    elements.resultData.innerHTML = `
+        <div class="qr-details">
+            <div class="qr-field">
+                <strong>Referencia:</strong> ${data.referencia}
+            </div>
+            <div class="qr-field">
+                <strong>Serial:</strong> ${data.serial}
+            </div>
+            <div class="qr-field">
+                <strong>Fecha Almacén:</strong> ${data.fechaAlmacen || 'N/A'}
             </div>
             ${data.fechaDespacho ? `<div class="qr-field"><strong>Fecha Despacho:</strong> ${data.fechaDespacho}</div>` : ''}
         </div>
     `;
-    // Formatear contenido según el tipo
-    if (type === 'URL') {
-        elements.resultData.innerHTML = `<a href="${qrContent}" target="_blank" rel="noopener">${qrContent}</a>`;
-    } else {
-        elements.resultData.textContent = qrContent;
-    }
     
     const now = new Date();
     elements.resultMeta.textContent = `Escaneado: ${now.toLocaleString('es-ES')}`;
     
     elements.lastResult.classList.remove('hidden');
-}estadoClass = record.estado === 'EN ALMACEN' ? 'almacen' : 'despachado';
+}
+
+/**
+ * Limpia el último resultado mostrado
+ */
+function clearLastResult() {
+    elements.lastResult.classList.add('hidden');
+}
+
+/**
+ * Muestra los registros en la tabla
+ */
+function displayRecords(records) {
+    elements.recordsBody.innerHTML = records.map(record => {
+        const estadoClass = record.estado === 'EN ALMACEN' ? 'almacen' : 'despachado';
         const estadoEmoji = record.estado === 'EN ALMACEN' ? '📦' : '🚚';
         
         return `
@@ -382,19 +409,19 @@ async function loadStats() {
                 <td class="content-cell">${record.serial}</td>
                 <td><span class="type-badge type-${estadoClass}">${estadoEmoji} ${record.estado}</span></td>
                 <td>${record.fechaAlmacen} <small>${record.horaAlmacen || ''}</small></td>
-                <td>${record.fechaDespacho || '-'} <small>${record.horaDespacho || ''}</small>
+                <td>${record.fechaDespacho || '-'} <small>${record.horaDespacho || ''}</small></td>
+            </tr>
+        `;
+    }).join('');
+}
+
+/**
+ * Muestra las estadísticas
  */
-function displayRecords(records) {
-    elements.recordsBody.innerHTML = records.map(record => {
-        const typeEmoji = getTypeEmoji(record.type);
-        const contentPreview = truncateText(record.content, 50);
-        
-        return `
-            <tr>
-                <td><span class="id-badge">#${record.id}</span></td>
-                <td><span class="type-badge type-${record.type.toLowerCase()}">${typeEmoji} ${record.type}</span></td>
-                <td class="content-cell" title="${record.content}">${contentPreview}</td>
-                <td>${record.date}</td>
+function displayStats(stats) {
+    elements.totalScans.textContent = stats.total;
+    elements.todayScans.textContent = stats.today;
+    
     const statsData = [
         { label: 'En Almacén', count: stats.enAlmacen, emoji: '📦', class: 'almacen' },
         { label: 'Despachados', count: stats.despachados, emoji: '🚚', class: 'despachado' }
@@ -416,21 +443,7 @@ function displayRecords(records) {
                 </div>
             </div>
         `;
-    }).join('');               <div class="stat-icon">${emoji}</div>
-                    <div class="stat-info">
-                        <div class="stat-type">${type}</div>
-                        <div class="stat-count">${count}</div>
-                        <div class="stat-percentage">${percentage}%</div>
-                    </div>
-                    <div class="stat-bar">
-                        <div class="stat-bar-fill" style="width: ${percentage}%"></div>
-                    </div>
-                </div>
-            `;
-        }).join('');
-    } else {
-        elements.statsContainer.innerHTML = '<p class="no-data">No hay datos estadísticos</p>';
-    }
+    }).join('');
 }
 
 /**
@@ -459,7 +472,15 @@ function showToast(message, type = 'info') {
 async function exportToCSV() {
     try {
         const response = await fetch(`${API_URL}/api/recent-scans?limit=1000`);
-        const result = await resReferencia', 'Serial', 'Estado', 'Fecha Almacén', 'Hora Almacén', 'Fecha Despacho', 'Hora Despacho'];
+        const result = await response.json();
+        
+        if (!result.success || result.data.length === 0) {
+            showToast('No hay datos para exportar', 'warning');
+            return;
+        }
+        
+        // Crear CSV
+        const headers = ['ID', 'Referencia', 'Serial', 'Estado', 'Fecha Almacén', 'Hora Almacén', 'Fecha Despacho', 'Hora Despacho'];
         const rows = result.data.map(r => [
             r.id, 
             `"${r.referencia}"`, 
@@ -480,25 +501,28 @@ async function exportToCSV() {
         const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement('a');
         link.href = URL.createObjectURL(blob);
-        link.download = `inventario-qr
-            ...rows.map(row => row.join(','))
-        ].join('\n');
+        link.download = `inventario-qr-${new Date().toISOString().split('T')[0]}.csv`;
+        link.click();
         
-        // Descargar archivo
-        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(blob);
-        link.download = `qr-scans-${new Date().toISOString().split('T')[0]}.csv`;
-   Trunca un texto largo
+        showToast('Archivo CSV descargado', 'success');
+        
+    } catch (error) {
+        console.error('Error al exportar:', error);
+        showToast('Error al exportar datos', 'error');
+    }
+}
+
+// ============================================
+// FUNCIONES AUXILIARES
+// ============================================
+
+/**
+ * Trunca un texto largo
  */
 function truncateText(text, maxLength) {
     if (text.length <= maxLength) return text;
-    return text.substring(0, maxLength) + '...'
-    if (ua.includes('Windows')) os = 'Windows';
-    else if (ua.includes('Mac')) os = 'macOS';
-    else if (ua.includes('Linux')) os = 'Linux';
-    else if (ua.includes('Android')) os = 'Android';
-    else if (ua.includes('iOS')) os = 'iOS';
+    return text.substring(0, maxLength) + '...';
+}
     
     // Detectar tipo de dispositivo
     let device = 'Desktop';

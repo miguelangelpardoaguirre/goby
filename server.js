@@ -120,7 +120,12 @@ app.get('/api/health', (req, res) => {
     message: 'Servidor funcionando correctamente',
     timestamp: new Date().toISOString()
   });
-}); }
+});
+
+/**
+ * Guarda un código QR escaneado en Google Sheets
+ * POST /api/save-qr
+ * Body: { qrContent }
  */
 app.post('/api/save-qr', async (req, res) => {
   try {
@@ -230,23 +235,18 @@ app.post('/api/save-qr', async (req, res) => {
       });
 
       res.json({ 
-      referencia: row.get('REFERENCIA'),
-      serial: row.get('SERIAL'),
-      estado: row.get('ESTADO'),
-      fechaAlmacen: row.get('FECHA_ALMACEN'),
-      fechaDespacho: row.get('FECHA_DESPACHO'),
-      horaAlmacen: row.get('HORA_ALMACEN'),
-      horaDespacho: row.get('HORA_DESPACHO
+        success: true, 
+        action: 'stored',
+        message: '✅ Producto registrado EN ALMACEN',
+        data: {
+          id: nextId,
+          referencia,
+          serial,
           estado: 'EN ALMACEN',
           fechaAlmacen: fecha
         }
       });
-    }ata: {
-        id: nextId,
-        type: qrType,
-        timestamp: now.toISOString()
-      }
-    });
+    }
 
   } catch (error) {
     console.error('Error al guardar QR:', error);
@@ -264,6 +264,54 @@ app.post('/api/save-qr', async (req, res) => {
  */
 app.get('/api/recent-scans', async (req, res) => {
   try {
+    const limit = parseInt(req.query.limit) || 10;
+    
+    const doc = await getGoogleSheet();
+    const sheet = doc.sheetsByIndex[0];
+    
+    if (!sheet) {
+      return res.json({ success: true, data: [] });
+    }
+
+    const rows = await sheet.getRows();
+    const recentRows = rows.slice(-limit).reverse();
+
+    const data = recentRows.map(row => ({
+      id: row.get('ID'),
+      referencia: row.get('REFERENCIA'),
+      serial: row.get('SERIAL'),
+      estado: row.get('ESTADO'),
+      fechaAlmacen: row.get('FECHA_ALMACEN'),
+      fechaDespacho: row.get('FECHA_DESPACHO'),
+      horaAlmacen: row.get('HORA_ALMACEN'),
+      horaDespacho: row.get('HORA_DESPACHO')
+    }));
+
+    res.json({ success: true, data });
+
+  } catch (error) {
+    console.error('Error al obtener registros:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Error al obtener registros',
+      details: error.message 
+    });
+  }
+});
+
+/**
+ * Obtiene estadísticas de escaneos
+ * GET /api/stats
+ */
+app.get('/api/stats', async (req, res) => {
+  try {
+    const doc = await getGoogleSheet();
+    const sheet = doc.sheetsByIndex[0];
+    
+    if (!sheet) {
+      return res.json({ 
+        success: true, 
+        data: { 
           total: 0, 
           enAlmacen: 0, 
           despachados: 0,
@@ -291,55 +339,7 @@ app.get('/api/recent-scans', async (req, res) => {
         stats.despachados++;
       }
       
-      if (row.get('FECHA_ALMACEN') === today || row.get('FECHA_DESPACHOha'),
-      time: row.get('Hora'),
-      browser: row.get('Navegador'),
-      os: row.get('Sistema Operativo'),
-      device: row.get('Dispositivo')
-    }));
-
-    res.json({ success: true, data });
-
-  } catch (error) {
-    console.error('Error al obtener registros:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Error al obtener registros',
-      details: error.message 
-    });
-  }
-});
-
-/**
- * Obtiene estadísticas de escaneos
- * GET /api/stats
- */
-app.get('/api/stats', async (req, res) => {
-  try {
-    const doc = await getGoogleSheet();
-    const sheet = doc.sheetsByIndex[0];
-    
-    if (!sheet) {
-      return res.json({ 
-        success: true, 
-        data: { total: 0, byType: {}, today: 0 } 
-      });
-    }
-
-    const rows = await sheet.getRows();
-    const today = new Date().toLocaleDateString('es-ES');
-
-    const stats = {
-      total: rows.length,
-      byType: {},
-      today: 0
-    };
-
-    rows.forEach(row => {
-      const type = row.get('Tipo');
-      stats.byType[type] = (stats.byType[type] || 0) + 1;
-      
-      if (row.get('Fecha') === today) {
+      if (row.get('FECHA_ALMACEN') === today || row.get('FECHA_DESPACHO') === today) {
         stats.today++;
       }
     });
